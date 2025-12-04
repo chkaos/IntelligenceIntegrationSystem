@@ -394,10 +394,13 @@ class IntelligenceHub:
         return result is None or 'error' in result
 
     @retry(
-        # The wait strategy: start at 1s, multiply by 2 each time, max out at 30s
-        wait=wait_exponential(multiplier=1, min=1, max=30),
+        # Note that the timeout handling is inside AI client. This retry will get another client.
+        # So we don't have to wait for so much time.
+
+        # The wait strategy: start at 2s, multiply by 3 each time, max out at 60s
+        wait=wait_exponential(min=1, multiplier=2, max=60),
         # The stop condition: stop after max_retry attempts
-        stop=stop_after_attempt(3),
+        stop=stop_after_attempt(5),
         # The retry condition: retry if an exception occurs OR the result is an error
         retry=(retry_if_exception_type(Exception) | retry_if_result(__is_result_an_error))
     )
@@ -407,8 +410,8 @@ class IntelligenceHub:
         """
         if self.shutdown_flag.is_set():
             return None
-        prefix = f'AI Worker [{worker_index}]'
-        client_user = f'IntelligenceHub-{worker_index}'
+        prefix = f'AI Analyzer [{worker_index}]'
+        client_user = f'AI Analyzer-{worker_index}'
 
         # --------------------------- Wait until one AI client available ---------------------------
 
@@ -416,6 +419,7 @@ class IntelligenceHub:
         while True:
             if ai_client := self.ai_client_manager.get_available_client(client_user):
                 result = analyze_with_ai(ai_client, ANALYSIS_PROMPT, original_data)
+                self.ai_client_manager.release_client(ai_client)
                 break
             retries += 1
             if retries % 10 == 0:
